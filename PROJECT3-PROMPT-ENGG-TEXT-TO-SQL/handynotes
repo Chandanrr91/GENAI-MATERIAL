@@ -1,49 +1,3 @@
-1. Configure one EC2 instance with min of 30GB Disk T2.Micro with Ubuntu Latest AMI
-
-2. Installing and configuring docker
-
-sudo su - 
-# Add Docker's official GPG key:
-sudo apt update
-sudo apt install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-# Add the repository to Apt sources:
-sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
-Components: stable
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-
-sudo apt update
-sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl status docker
-sudo systemctl start docker
-sudo docker run hello-world
-
-3.Create IAM User GENAI-TEXT2SQL-USER with "administrator" access and generate access key and secret key
-
-aws configure 
-
-4. Creating aws services for application hosting
-git clone https://github.com/shan5a6/GENAI-MATERIAL.git
-cd GENAI-MATERIAL/PROJECT3-PROMPT-ENGG-TEXT-TO-SQL/
-
-2. LLM-API
-
-
-
-
-3. Generic Query Executor
-
-
-
-======
-
 1. Create one workstation with ubuntu latest image - Just to be safe side take 20GB
 2. Installing and configuring docker
 
@@ -83,12 +37,7 @@ aws configure
 4. Create ECR repository:
 
 1. generic-query-executor
-
-2. customers-api
-
-3. orders-api
-
-
+2. llm-text-sql-agent
 
 5. Build & Push images
 git clone https://github.com/shan5a6/GENAI-MATERIAL.git
