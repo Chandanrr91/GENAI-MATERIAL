@@ -1,27 +1,42 @@
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, HTTPException
 from app.graph import graph
+from app.config import logger
 
-app = FastAPI()
+app = FastAPI(title="Travel Agent API")
 
 @app.post("/chat")
 async def chat(payload: dict = Body(...)):
     thread_id = payload.get("thread_id", "session_1")
     config = {"configurable": {"thread_id": thread_id}}
-    action = payload.get("action") # "start", "select_prices", or "fix_budget"
+    action = payload.get("action")
+    data = payload.get("data", {})
 
-    if action == "start":
-        inputs = payload.get("data") # {origin, destination, date, budget}
-        graph.invoke(inputs, config)
-    
-    elif action == "select_prices":
-        # Replaces your input("\nChosen flight price: ")
-        graph.update_state(config, payload.get("data"))
-        graph.invoke(None, config)
+    logger.info(f"REQUEST | Action: {action} | Thread: {thread_id}")
 
-    elif action == "fix_budget":
-        # Replaces your budget deficit choice logic
-        graph.update_state(config, payload.get("data"))
-        graph.update_state(config, {}, as_node="supervisor")
-        graph.invoke(None, config)
+    try:
+        if action == "start":
+            graph.invoke(data, config)
+        
+        elif action == "select_prices":
+            graph.update_state(config, data)
+            graph.invoke(None, config)
 
-    return graph.get_state(config).values
+        elif action == "fix_budget":
+            graph.update_state(config, data)
+            graph.update_state(config, {}, as_node="supervisor")
+            graph.invoke(None, config)
+            
+        else:
+            raise HTTPException(status_code=400, detail="Invalid action provided")
+
+        final_state = graph.get_state(config).values
+        logger.info(f"SUCCESS | Thread: {thread_id} | State: {final_state.get('remaining_budget')}")
+        return final_state
+
+    except Exception as e:
+        logger.error(f"FATAL ERROR | Thread: {thread_id} | Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Server Error during Graph Execution")
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}

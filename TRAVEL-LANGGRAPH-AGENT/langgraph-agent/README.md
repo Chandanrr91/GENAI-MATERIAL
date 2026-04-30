@@ -109,7 +109,6 @@ docker run -e OPENAI_API_KEY=xxx \
            -e DUFFEL_ACCESS_TOKEN=xxx \
            travel-langgraph-agent
 ```
-
 ## ☁️ AWS ECR Deployment
 
 ```bash
