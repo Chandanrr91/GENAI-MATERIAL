@@ -16,11 +16,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TRAVEL_UI")
 
-# Use the ECS Agent Service URL (Update this in your ECS Env Vars)
+# Use the ECS Agent Service URL
 LLM_AGENT_URL = os.environ.get("LLM_AGENT_URL", "http://your-ecs-agent:8000/chat")
 
 # Initialize the "Shield" LLM for intent extraction
-# Ensure OPENAI_API_KEY is in your ECS Task Definition
 llm = ChatOpenAI(
     model="gpt-4o-mini", 
     temperature=0,
@@ -51,10 +50,14 @@ async def parse_user_request(text: str):
     """
     try:
         response = await llm.ainvoke(prompt)
-        # Clean the response in case LLM adds markdown backticks
-        content = response.content.replace('```json', '').replace('
-```', '').strip()
-        return json.loads(content)
+        # FIX: Robustly clean markdown formatting from LLM response
+        content = response.content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.endswith("```"):
+            content = content[:-3]
+        
+        return json.loads(content.strip())
     except Exception as e:
         logger.error(f"Failed to parse intent: {e}")
         return None
@@ -86,7 +89,7 @@ async def handle_message(message: cl.Message):
     thread_id = cl.user_session.get("thread_id")
     user_input = message.content.strip()
 
-    # Step 1: Check if the input is a manual budget fix (just a number)
+    # Step 1: Check if input is just a number (Manual budget adjustment)
     if user_input.replace('.', '', 1).isdigit():
         payload = {
             "thread_id": thread_id,
@@ -97,14 +100,14 @@ async def handle_message(message: cl.Message):
         await process_agent_response(res_data)
         return
 
-    # Step 2: Use the 'Shield' LLM to parse natural language
+    # Step 2: Intent Parsing
     structured_data = await parse_user_request(user_input)
     
     if not structured_data or structured_data.get("origin") == "unknown":
-        await cl.Message(content="I couldn't quite catch your travel details. Could you please specify where you are traveling from, your destination, and the date?").send()
+        await cl.Message(content="I couldn't quite catch those details. Could you please specify your origin, destination, and travel date?").send()
         return
 
-    # Step 3: Trigger the LangGraph Agent
+    # Step 3: Call the Agent
     payload = {
         "thread_id": thread_id,
         "action": "start",
@@ -122,7 +125,7 @@ async def handle_message(message: cl.Message):
         await process_agent_response(res_data)
     except Exception as e:
         logger.error(f"Agent Call Failed: {e}")
-        await cl.Message(content="⚠️ My travel agent service is currently unavailable. Please try again in a moment.").send()
+        await cl.Message(content="⚠️ Agent service unavailable. Please check your ECS logs.").send()
 
 async def process_agent_response(res_data):
     """Analyzes graph state and renders UI elements"""
@@ -135,7 +138,7 @@ async def process_agent_response(res_data):
                 name="select_flight", 
                 value=str(f['price']), 
                 label=f["info"],
-                payload={"price": f['price']} # Required by modern Chainlit/Pydantic
+                payload={"price": f['price']} 
             )
             for f in res_data["flight_options"]
         ]
@@ -167,19 +170,17 @@ async def on_action(action: cl.Action):
     
     logger.info(f"User selected flight: ${price} for thread {thread_id}")
     
-    # We assume a base hotel cost of $500 for the simulation
     payload = {
         "thread_id": thread_id,
         "action": "select_prices",
         "data": {"selected_flight_price": price, "selected_hotel_price": 500}
     }
     
-    # Visual feedback for the user
-    await cl.Message(content=f"Selected Flight: **${price}**. Finalizing your itinerary...").send()
+    await cl.Message(content=f"Selected Flight: **${price}**. Finalizing itinerary...").send()
     
     try:
         res_data = await call_agent(payload)
         await process_agent_response(res_data)
     except Exception as e:
         logger.error(f"Action Callback Failed: {e}")
-        await cl.Message(content="⚠️ Something went wrong while selecting your flight.").send()
+        await cl.Message(content="⚠️ Error finalizing selection.").send()
