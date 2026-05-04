@@ -154,40 +154,40 @@ async def handle_message(message: cl.Message):
 # =========================================================
 
 async def process_agent_response(res_data):
-    # 1. Flight Selection Buttons
-    if "flight_options" in res_data and not res_data.get("selected_flight_price"):
+    # 1. Flight Selection
+    if res_data.get("flight_options") and not res_data.get("selected_flight_price"):
         actions = [
             cl.Action(name="select_flight", label=f"{f['info']} (${f['price']})", payload={"price": f['price']})
             for f in res_data["flight_options"]
         ]
         await cl.Message(content="✈️ **Select a Flight:**", actions=actions).send()
 
-    # 2. Hotel Selection Buttons
-    elif "hotel_options" in res_data and not res_data.get("selected_hotel_price"):
+    # 2. Hotel Selection
+    elif res_data.get("hotel_options") and not res_data.get("selected_hotel_price"):
         actions = [
             cl.Action(name="select_hotel", label=f"{h['name']} (${h['price']})", payload={"price": h['price']})
             for h in res_data["hotel_options"]
         ]
         await cl.Message(content="🏨 **Select a Hotel:**", actions=actions).send()
 
-    # 3. Budget Alert
-    elif res_data.get("remaining_budget", 0) < 0:
-        over = abs(res_data['remaining_budget'])
-        await cl.Message(content=f"❌ **Budget Alert!**\nYou are over by **${over:.2f}**. Please enter a new total budget.").send()
-
-    # 4. HITL: Confirmation Before Final Booking
+    # 3. Final Confirmation (HITL)
+    # Ensure this check is strict: must have both prices but NO booking ID yet
     elif res_data.get("selected_hotel_price") and not res_data.get("is_booked"):
-        summary = (
-            f"### 🛡️ Final Confirmation\n"
-            f"Ready to book? Your remaining budget will be **${res_data.get('remaining_budget', 0):.2f}**."
-        )
-        actions = [cl.Action(name="confirm_booking", label="✅ Confirm & Generate ID", value="confirm",payload={})]
+        remaining = res_data.get("remaining_budget", 0)
+        
+        # Budget Check Logic inside the UI for immediate feedback
+        if remaining < 0:
+            await cl.Message(content=f"❌ **Budget Alert!** Over by **${abs(remaining):.2f}**.").send()
+            return
+
+        summary = f"### 🛡️ Final Confirmation\nReady to book? Remaining: **${remaining:.2f}**."
+        actions = [cl.Action(name="confirm_booking", label="✅ Confirm & Generate ID", value="confirm", payload={})]
         await cl.Message(content=summary, actions=actions).send()
 
-    # 5. Post-Booking: Reference ID & Sightseeing Toggle
+    # 4. Success State
     elif res_data.get("is_booked"):
         ref = res_data.get("booking_reference")
-        await cl.Message(content=f"🎉 **Booking Confirmed!**\nReference ID: `{ref}`\nUse `/retrieve {ref}` to see this later.").send()
+        await cl.Message(content=f"🎉 **Booking Confirmed!** ID: `{ref}`").send()
         
         if res_data.get("activities") and not cl.user_session.get("activities_shown"):
             actions = [cl.Action(name="show_spots", label="🎡 View Sightseeing Spots", value="show", payload={})]
@@ -221,8 +221,22 @@ async def on_confirm(action: cl.Action):
 @cl.action_callback("show_spots")
 async def on_show_spots(action: cl.Action):
     cl.user_session.set("activities_shown", True)
+    # Pull fresh state
     res_data = await call_agent({"thread_id": cl.user_session.get("thread_id"), "action": "retrieve"})
     
-    for act in res_data.get("activities", [])[:5]:
-        img = [cl.Image(url=act['thumbnail'], display="inline")] if act.get('thumbnail') else []
-        await cl.Message(content=f"**{act['title']}**\n{act.get('price', 'Free')}", elements=img).send()
+    activities = res_data.get("activities", [])
+    if not activities:
+        await cl.Message(content="No spots found for this location.").send()
+        return
+
+    for act in activities[:5]:
+        # If the agent returned a list of strings instead of dicts, skip or handle
+        if not isinstance(act, dict):
+            continue
+            
+        title = act.get('title', 'Local Attraction')
+        price = act.get('price', 'Check availability')
+        thumb = act.get('thumbnail')
+        
+        img = [cl.Image(url=thumb, display="inline")] if thumb else []
+        await cl.Message(content=f"**{title}**\n{price}", elements=img).send()
