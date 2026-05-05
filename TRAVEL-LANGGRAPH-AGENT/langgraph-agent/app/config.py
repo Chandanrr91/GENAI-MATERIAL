@@ -19,3 +19,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 DUFFEL_ACCESS_TOKEN = os.getenv("DUFFEL_ACCESS_TOKEN")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
+
+# LangGraph checkpoint persistence.
+# Use CHECKPOINTER_TYPE=postgres and DATABASE_URL or LANGGRAPH_POSTGRES_URI in ECS.
+CHECKPOINTER_TYPE = os.getenv("CHECKPOINTER_TYPE", "memory").lower()
+LANGGRAPH_POSTGRES_URI = os.getenv("LANGGRAPH_POSTGRES_URI") or os.getenv("DATABASE_URL")
+LANGGRAPH_POSTGRES_SETUP = os.getenv("LANGGRAPH_POSTGRES_SETUP", "false").lower() == "true"

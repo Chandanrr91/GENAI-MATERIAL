@@ -196,12 +196,23 @@ async def process_agent_response(res_data):
 
     if res_data.get("is_booked"):
         ref = res_data.get("booking_reference")
+        itinerary = res_data.get("itinerary") or {}
+        financials = itinerary.get("financials") or {}
+        hotel = itinerary.get("hotel") or {}
+        hotel_line = "Hotel: Skipped" if hotel.get("skipped") else f"Hotel: {hotel.get('name')} (${hotel.get('price', 0):.2f})"
+        summary = (
+            f"Booking confirmed.\n"
+            f"Reference ID: `{ref}`\n\n"
+            f"**Itinerary**\n"
+            f"Route: **{itinerary.get('origin', res_data.get('origin'))} -> {itinerary.get('destination', res_data.get('destination'))}**\n"
+            f"Date: **{itinerary.get('travel_date', res_data.get('travel_date_formatted'))}**\n"
+            f"Flight: **${(itinerary.get('flight') or {}).get('price', res_data.get('selected_flight_price') or 0):.2f}**\n"
+            f"{hotel_line}\n"
+            f"Amount planned/paid: **${financials.get('amount_paid', financials.get('amount_planned', 0)):.2f}**\n"
+            f"Remaining budget: **${financials.get('remaining_budget', res_data.get('remaining_budget') or 0):.2f}**"
+        )
         await cl.Message(
-            content=(
-                f"Booking confirmed.\n"
-                f"Reference ID: `{ref}`\n"
-                f"Use `/retrieve {ref}` anytime to view this itinerary."
-            )
+            content=summary + f"\n\nUse `/retrieve {ref}` anytime to view this itinerary."
         ).send()
 
         if res_data.get("activities") and not cl.user_session.get("activities_shown"):

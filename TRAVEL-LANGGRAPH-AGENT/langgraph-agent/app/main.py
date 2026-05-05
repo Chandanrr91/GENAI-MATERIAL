@@ -1,6 +1,5 @@
 from fastapi import Body, FastAPI, HTTPException
 
-from app.booking_store import get_booking, save_booking
 from app.config import logger
 from app.graph import graph
 from app.nodes import activity_agent, booking_node, budget_check_node
@@ -21,6 +20,52 @@ def _merge_state(thread_id: str, updates: dict) -> dict:
     config = _config(thread_id)
     graph.update_state(config, updates)
     return _state(thread_id)
+
+
+def _itinerary_response(state: dict) -> dict:
+    flight_price = state.get("selected_flight_price") or 0.0
+    hotel_price = state.get("selected_hotel_price") or 0.0
+    total_budget = state.get("total_budget") or 0.0
+    amount_planned = round(float(flight_price) + float(hotel_price), 2)
+    booking_confirmed = bool(state.get("is_booked"))
+
+    return {
+        **state,
+        "itinerary": {
+            "booking_reference": state.get("booking_reference"),
+            "booking_status": "confirmed" if booking_confirmed else "in_progress",
+            "origin": state.get("origin"),
+            "destination": state.get("destination"),
+            "travel_date": state.get("travel_date_formatted") or state.get("travel_date_input"),
+            "origin_iata": state.get("origin_iata"),
+            "destination_iata": state.get("destination_iata"),
+            "flight": {
+                "summary": state.get("selected_flight_info"),
+                "price": flight_price,
+            },
+            "hotel": {
+                "name": state.get("selected_hotel_name"),
+                "price": hotel_price,
+                "skipped": bool(state.get("hotel_skipped")),
+            },
+            "financials": {
+                "total_budget": total_budget,
+                "amount_planned": amount_planned,
+                "amount_paid": amount_planned if booking_confirmed else 0.0,
+                "remaining_budget": state.get("remaining_budget"),
+            },
+            "activities": state.get("activities", []),
+        },
+    }
+
+
+def _persist_booking_reference(reference: str, source_thread_id: str, state: dict) -> None:
+    reference_state = {
+        **state,
+        "source_thread_id": source_thread_id,
+        "thread_alias_type": "booking_reference",
+    }
+    _merge_state(reference, reference_state)
 
 
 def _run_budget_and_activities(thread_id: str) -> dict:
@@ -101,18 +146,17 @@ async def chat(payload: dict = Body(...)):
             if current.get("selected_hotel_price") is None and not current.get("hotel_skipped"):
                 raise HTTPException(status_code=400, detail="Select or skip hotel before booking.")
 
-            current.update(booking_node(current))
-            _merge_state(thread_id, current)
-            save_booking(current["booking_reference"], _state(thread_id))
+            if not current.get("is_booked"):
+                current.update(booking_node(current))
+                _merge_state(thread_id, current)
+            _persist_booking_reference(current["booking_reference"], thread_id, _state(thread_id))
 
         elif action == "retrieve":
             reference = (payload.get("reference") or thread_id or "").upper()
-            stored = get_booking(reference)
-            if stored:
-                return stored
-            current = _state(thread_id)
+            current = _state(reference) or _state(thread_id)
             if not current:
                 raise HTTPException(status_code=404, detail=f"No booking found for {reference}")
+            return _itinerary_response(current)
 
         elif action == "fix_budget":
             if data.get("total_budget") is None:
@@ -129,7 +173,7 @@ async def chat(payload: dict = Body(...)):
         else:
             raise HTTPException(status_code=400, detail="Invalid action")
 
-        return _state(thread_id)
+        return _itinerary_response(_state(thread_id))
 
     except HTTPException:
         raise

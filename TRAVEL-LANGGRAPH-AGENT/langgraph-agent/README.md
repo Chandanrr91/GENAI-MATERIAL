@@ -32,12 +32,16 @@ OPENAI_API_KEY=
 LLM_MODEL=gpt-4o
 SERPAPI_API_KEY=
 DUFFEL_ACCESS_TOKEN=
-BOOKING_STORE_PATH=/tmp/travel_bookings.json
+CHECKPOINTER_TYPE=memory
+LANGGRAPH_POSTGRES_URI=
+LANGGRAPH_POSTGRES_SETUP=false
 ```
 
-LangGraph `MemorySaver` remains the primary state store for active conversations. Every active conversation is keyed by the `thread_id` passed from the UI, and it is available as long as the backend ECS task is running.
+LangGraph remains the primary state store for active conversations. Every active conversation is keyed by the `thread_id` passed from the UI.
 
-The booking store is only a secondary lookup for completed bookings after the user confirms. For booking retrieval across ECS task restarts, mount an EFS volume and set `BOOKING_STORE_PATH` to a file path on that volume. For a higher scale production system, replace the file store with DynamoDB or Postgres.
+For local demos, use `CHECKPOINTER_TYPE=memory`; state is available only while the backend process is alive. For production/ECS, use `CHECKPOINTER_TYPE=postgres` and provide `LANGGRAPH_POSTGRES_URI` or `DATABASE_URL` from Secrets Manager/SSM. Set `LANGGRAPH_POSTGRES_SETUP=true` once to create/migrate the checkpointer tables, then set it back to `false` for normal runtime.
+
+After confirmation, the backend writes the same full itinerary state under the generated `TRV-XXXXXX` booking reference as a LangGraph thread alias. This lets `/retrieve TRV-XXXXXX` return the complete itinerary from the configured LangGraph checkpointer without a separate file store.
 
 ## UI Environment
 
@@ -91,6 +95,7 @@ docker build -t travel-chat-assistant .
 - Allow the UI task to reach backend port `8000`.
 - Set `LLM_AGENT_URL` in the UI task to the backend service endpoint.
 - Use Secrets Manager or SSM Parameter Store for API keys.
+- Use `CHECKPOINTER_TYPE=postgres` for persistent LangGraph state across ECS restarts and deployments.
 - Configure CloudWatch logs for both services.
 - Add health checks:
   - Backend: `GET /health`
@@ -98,7 +103,6 @@ docker build -t travel-chat-assistant .
 
 ## Recommended Production Improvements
 
-- Replace file-based booking storage with DynamoDB or Postgres.
 - Add authentication before exposing booking retrieval publicly.
 - Add request/response tracing with a correlation ID.
 - Add unit tests with mocked Duffel and SerpAPI responses.
